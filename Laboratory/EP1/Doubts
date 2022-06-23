@@ -1,0 +1,25 @@
+loop
+ lambda
+ 
+ 14/outubro -> 30 min 
+ ---------------- Dani -----------------
+ let: dá nome as funções
+ interps: chamar para testar
+ ------------------- 06/11--------------------
+ letrecS
+ nao tem letrecC
+ transformar em letC no desugar
+ 
+ let* -> pequena variação do let
+ letrec -> fazer begin
+ usar set
+ let* - usar let da linguagem ou letC (interpS)
+
+1-DANI)
+let* - letC, letS, interpS, desugar, parser
+letrec - letS, desugar (semelhante ao bminusS, resolver no desugar), parser
+
+3) load - FEITO
+Lucas - Eu tinha feito um loadS e loadC, mas dps tratei no parse 
+Marcos - A primeira é sobre o load, é esperado que tenha um loadS e um loadC? Porque do jeito que eu fiz eu já tratei direto no parser
+Marcos - Porque o read já me retorna a s-expression que quero

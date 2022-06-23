@@ -1,0 +1,276 @@
+#lang plai-typed
+
+
+; Basic expressions
+(define-type ExprC
+  [numC  (n : number)]
+  [idC   (s : symbol)]
+  [plusC (l : ExprC) (r : ExprC)]
+  [multC (l : ExprC) (r : ExprC)]
+  [methodC (name : symbol) (arg : symbol) (body : ExprC)]
+  [sendC (obj : ExprC) (name : symbol) (arg : ExprC)]
+  [ifC   (c : ExprC) (y : ExprC) (n : ExprC)]
+  [seqC  (e1 : ExprC) (e2 : ExprC)]
+  [setC  (var : symbol) (arg : ExprC)]
+  [letC  (name : symbol) (arg : ExprC) (body : ExprC)]
+  [quoteC  (sym : symbol)]
+  [classC (n : symbol) (var : symbol) (m1 : ExprC) (m2 : ExprC)]
+  [newC  (name : symbol) (value : ExprC)]
+  )
+
+
+; Sugared expressions
+(define-type ExprS
+  [numS    (n : number)]
+  [idS     (s : symbol)]
+  [methodS (name : symbol) (arg : symbol) (body : ExprS)]
+  [sendS (obj : ExprS) (name : symbol) (arg : ExprS)]
+  [plusS   (l : ExprS) (r : ExprS)]
+  [bminusS (l : ExprS) (r : ExprS)]
+  [uminusS (e : ExprS)]
+  [multS   (l : ExprS) (r : ExprS)]
+  [ifS     (c : ExprS) (y : ExprS) (n : ExprS)]
+  [seqS    (e1 : ExprS) (e2 : ExprS)]
+  [setS    (var : symbol) (arg : ExprS)]
+  [letS    (name : symbol) (arg : ExprS) (body : ExprS)]
+  [quoteS  (sym : symbol)]
+  [classS  (n : symbol) (var : symbol) (m1 : ExprS) (m2 : ExprS)]
+  [newS    (name : symbol) (value : ExprS)]
+  )
+
+
+; Removing the sugar
+(define (desugar [as : ExprS]) : ExprC
+  (type-case ExprS as
+    [numS    (n)        (numC n)]
+    [idS     (s)        (idC s)]
+    [methodS (n a b)    (methodC n a (desugar b))]
+    [sendS   (obj name arg) (sendC (desugar obj) name (desugar arg))]
+    [plusS   (l r)      (plusC (desugar l) (desugar r))]
+    [multS   (l r)      (multC (desugar l) (desugar r))]
+    [bminusS (l r)      (plusC (desugar l) (multC (numC -1) (desugar r)))]
+    [uminusS (e)        (multC (numC -1) (desugar e))]
+    [ifS     (c s n)    (ifC (desugar c) (desugar s) (desugar n))]
+    [seqS    (e1 e2)    (seqC (desugar e1) (desugar e2))]
+    [setS    (var expr) (setC  var (desugar expr))]
+    [letS    (n a b)    (letC n (desugar a) (desugar b))]
+    [quoteS (sym) (quoteC sym)]
+    [classS  (n var m1 m2) (classC n var (desugar m1) (desugar m2))]
+    [newS    (n value)  (newC n (desugar value))]
+    ))
+
+
+; We need a new value for the box
+(define-type Value
+  [numV  (n : number)]
+  [quoteV (symb : symbol)]
+  [methodV (name : symbol) (arg : symbol) (body : ExprC)]
+  [classV (super-name : symbol) (var : symbol) (method1 : Value) (method2 : Value)]
+  [objectV (name : symbol) (env : Env)]
+  )
+
+
+; Bindings associate symbol with location
+(define-type Binding
+        [bind (name : symbol) (val : (boxof Value))])
+
+; Env remains the same, we only change the Binding
+(define-type-alias Env (listof Binding))
+(define mt-env empty)
+(define initial-env (list (bind 'Object (box (classV 'empty 'empty (quoteV 'empty) (quoteV 'empty))))))
+(define extend-env cons)
+
+; Find the name of a variable
+(define (lookup [for : symbol] [env : Env]) : (boxof Value)
+       (cond
+            [(empty? env) (error 'lookup (string-append (symbol->string for) " was not found"))] ; variable is undefined
+            [else (cond
+                  [(symbol=? for (bind-name (first env)))   ; found it!
+                                 (bind-val (first env))]
+                  [else (lookup for (rest env))])]))        ; check in the rest
+
+
+(define (find-method [for : symbol] [class : symbol] [env : Env]) : Value
+  (let* ([value (unbox (lookup class env))]
+         [super (classV-super-name value)]
+         [method1 (classV-method1 value)]
+         [method2 (classV-method2 value)])
+    (cond
+      [(classV? value)
+          (cond
+            [(equal? for (methodV-name method1)) method1]
+            [(equal? for (methodV-name method2)) method2]
+            [(not (equal? super 'Object)) (find-method for super env)]
+            [else (error 'find-method (string-append (symbol->string for) " was not found"))])]
+      [else (error 'find-method "Class type is not a classV")])))
+
+; Auxiliary operators
+(define (num+ [l : Value] [r : Value]) : Value
+    (cond
+        [(and (numV? l) (numV? r))
+             (numV (+ (numV-n l) (numV-n r)))]
+        [else
+             (error 'num+ "One of the arguments is not a number")]))
+
+(define (num* [l : Value] [r : Value]) : Value
+    (cond
+        [(and (numV? l) (numV? r))
+             (numV (* (numV-n l) (numV-n r)))]
+        [else
+             (error 'num* "One of the arguments is not a number")]))
+
+; Interpreter
+(define (interp [a : ExprC] [env : Env]) : Value
+  (type-case ExprC a
+    ; Numbers just evaluta to their equivalent Value
+    [numC (n) (numV n)]
+
+    ; IDs are retrieved from the Env and unboxed
+    [idC (n) (unbox (lookup n env))]
+
+    ; Lambdas evaluate to closures, which save the environment
+    [methodC (n a b) (methodV n a b)]
+
+    [classC (n var m1 m2) (classV n var (interp m1 env) (interp m2 env))]
+
+    ; Application of method
+    [sendC (obj n arg)
+      (let* ([object (interp obj env)]
+             [method (find-method n (objectV-name object) (objectV-env object))])
+          (interp (methodV-body method) 
+                  (extend-env (bind (methodV-arg method) (box (interp arg env))) 
+                              (objectV-env object))))]
+
+    ; Sum two numbers using auxiliary function
+    [plusC (l r) (num+ (interp l env) (interp r env))]
+
+    ; Multiplies two numbers using auxiliary function
+    [multC (l r) (num* (interp l env) (interp r env))]
+
+    ; Conditional operator
+    [ifC (c s n) (if (zero? (numV-n (interp c env))) (interp n env) (interp s env))]
+
+    ; Sequence of operations
+    [seqC (b1 b2) (begin (interp b1 env) (interp b2 env))] ; No side effect between expressions!
+
+    ; Attribution of variables
+    [setC (var val) (let ([b (lookup var env)])
+                      (begin (set-box! b (interp val env)) (unbox b)))]
+
+    ; Declaration of variable
+    [letC (name arg body)
+          (let* ([new-bind (bind name (box (interp arg env)))]
+                 [new-env (extend-env new-bind env)])
+            (interp body new-env))]
+
+    [quoteC (sym) (quoteV sym)]
+
+    [newC  (n value)
+          (let* ([class (unbox (lookup n env))]
+                 [parent (if (equal? (classV-super-name class) 'Object)
+                             (objectV 'nothing env)
+                             (interp (newC (classV-super-name class) (numC 0)) env))])
+            (objectV n (extend-env (bind (classV-var class) (box (interp value (objectV-env parent)))) (objectV-env parent))))]
+    ))
+
+
+; Parser
+(define (parse [s : s-expression]) : ExprS
+  (cond
+    [(s-exp-number? s) (numS (s-exp->number s))]
+    [(s-exp-symbol? s) (idS (s-exp->symbol s))]
+    [(s-exp-list? s)
+     (let ([sl (s-exp->list s)])
+       (case (s-exp->symbol (first sl))
+         [(+) (plusS (parse (second sl)) (parse (third sl)))]
+         [(*) (multS (parse (second sl)) (parse (third sl)))]
+         [(-) (bminusS (parse (second sl)) (parse (third sl)))]
+         [(~) (uminusS (parse (second sl)))]
+         [(method) (methodS (s-exp->symbol (second sl)) (s-exp->symbol (third sl)) (parse (fourth sl)))] ; definição
+         [(send) (sendS (parse (second sl))
+                        (s-exp->symbol (third sl))
+                        (parse (fourth sl)))]
+         [(if) (ifS (parse (second sl)) (parse (third sl)) (parse (fourth sl)))]
+         [(seq) (seqS (parse (second sl)) (parse (third sl)))]
+         [(:=) (setS (s-exp->symbol (second sl)) (parse (third sl)))]
+         [(let) (letS (s-exp->symbol (first (s-exp->list (first (s-exp->list (second sl))))))
+                      (parse (second (s-exp->list (first (s-exp->list (second sl))))))
+                      (parse (third sl)))]
+         [(class) (classS (s-exp->symbol (list-ref sl 1))
+                          (s-exp->symbol (list-ref sl 2))
+                          (parse (list-ref sl 3))
+                          (parse (list-ref sl 4)))]
+         [(quote) (quoteS (s-exp->symbol (second sl)))]
+         [(new) (newS (s-exp->symbol (second sl))
+                      (parse (third sl)))]
+         [else (error 'parse "invalid list input")]))]
+    [else (error 'parse "invalid input")]))
+
+
+; Facilitator
+(define (interpS [s : s-expression]) (interp (desugar (parse s)) initial-env))
+
+; testing class creation: classV and methodV
+(display "\nTESTING CLASS CREATION: classV AND methodV\n")
+(test (interpS '(class Object x (method plus y (+ x y)) (method mult y (* x y))))
+  (classV 'Object 'x (methodV 'plus 'y (plusC (idC 'x) (idC 'y))) (methodV 'mult 'y (multC (idC 'x) (idC 'y)))))
+
+; testing object instance
+(display "\nTESTING OBJECT INSTANCE\n")
+(test (interpS '(let ([Math (class Object x (method plus y (+ x y)) (method mult y (* x y)))])
+                (new Math 5)))
+      (objectV 'Math (list (bind 'x (box (numV 5))) 
+                           (bind 'Math (box (classV 'Object 'x (methodV 'plus 'y (plusC (idC 'x) (idC 'y))) 
+                                                               (methodV 'mult 'y (multC (idC 'x) (idC 'y)))))) 
+                           (bind 'Object (box (classV 'empty 'empty (quoteV 'empty) (quoteV 'empty)))))))
+
+(test (interpS '(let ([Math (class Object x (method plus y (+ x y)) (method mult y (* x y)))])
+                     (let ([Sum (class Math z (method plus y (+ z 1)) (method mult y (* z y)))])
+                          (new Sum 5))))
+      (objectV 'Sum (list (bind 'z (box (numV 5))) 
+                          (bind 'x (box (numV 0))) 
+                          (bind 'Sum (box (classV 'Math 'z (methodV 'plus 'y (plusC (idC 'z) (numC 1))) 
+                                                          (methodV 'mult 'y (multC (idC 'z) (idC 'y)))))) 
+                          (bind 'Math (box (classV 'Object 'x (methodV 'plus 'y (plusC (idC 'x) (idC 'y))) 
+                                                              (methodV 'mult 'y (multC (idC 'x) (idC 'y)))))) 
+                          (bind 'Object (box (classV 'empty 'empty (quoteV 'empty) (quoteV 'empty)))))))
+
+(test (interpS '(let ([Person (class Object name (method getName void name) (method setName newName (:= name newName)))])
+              (let ([User (class Person email (method getEmail void email) (method setEmail newEmail (:= email newEmail)))])
+                (let ([newUser (new User 'erick@rodrigues)])
+                    (let ([email (send newUser getEmail 'void)])
+                      (seq (send newUser setName 'erick) newUser))))))
+      (objectV 'User (list (bind 'email (box (quoteV 'erick@rodrigues))) 
+                          (bind 'name (box (quoteV 'erick))) 
+                          (bind 'User (box (classV 'Person 'email (methodV 'getEmail 'void (idC 'email)) 
+                                                                  (methodV 'setEmail 'newEmail (setC 'email (idC 'newEmail)))))) 
+                          (bind 'Person (box (classV 'Object 'name (methodV 'getName 'void (idC 'name)) 
+                                                                    (methodV 'setName 'newName (setC 'name (idC 'newName)))))) 
+                          (bind 'Object (box (classV 'empty 'empty (quoteV 'empty) (quoteV 'empty)))))))
+
+; test calling method
+(display "\nTEST CALLING METHOD\n")
+(test (interpS '(let ([User (class Object name (method getName void name) (method setName newName (:= name newName)))])
+              (send (new User 'erick) getName 'void)
+          )) (quoteV 'erick))
+
+(test (interpS '(let ([User (class Object name (method getName void name) (method setName newName (:= name newName)))])
+              (send (new User 'erick) setName 'jessy)
+          )) (quoteV 'jessy))
+
+; testing inheritance
+(display "\nTESTING INHERITANCE\n")
+(test (interpS '(let ([Person (class Object name (method getName void name) (method setName newName (:= name newName)))])
+              (let ([User (class Person email (method getEmail void email) (method setEmail newEmail (:= email newEmail)))])
+                (let ([newUser (new User 'erick@rodrigues)])
+                    (let ([email (send newUser getEmail 'void)])
+                      (seq (send newUser setName 'erick) email))))
+          )) (quoteV 'erick@rodrigues))
+
+; testing polimorfism
+(display "\nTESTING POLIMORFISM\n")
+(test (interpS '(let ([Math (class Object x (method plus y (+ x y)) (method mult y (* x y)))])
+                     (let ([Sum (class Math z (method plus y (+ z 1)) (method mult y (* z y)))])
+                          (send (new Sum 5) plus 4))))
+      (numV 6))
+

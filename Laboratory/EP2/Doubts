@@ -1,0 +1,21 @@
+EP2 - Inplementar Thunk
+
+Core
+[consC (car : ExprC) (cdr : ExprC)]
+[carC (cell : ExprC)]
+[cdrC (cell : ExprC)]
+
+
+Type Value
+[suspV (expr : ExprC) (env : Env)]
+
+
+display (eval())
+a) Feito!
+
+b) suspV -> suspensao nao tem paramtro do lamC
+   Ambos: ambiente e célula contêm box
+   Value
+
+c) let*, letrecC - tirar begin, e procurar equivalente ao set
+bonus -> display no begin

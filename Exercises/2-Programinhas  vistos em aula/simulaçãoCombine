@@ -1,0 +1,61 @@
+-> (define combine (lambda (f-bin f-un el-n)
+   	   (lambda (l)
+	   	   (if (null? l)
+		       el-n
+		       (f-bin (f-un (car l))
+		              ((combine f-bin f-un el-n) (cdr l)))))))
+-> (define somatoria (combine + id 0))
+-> (define id (lambda (x) x))
+-> (somatoria '(1 2 3))
+->(K-somatoria '(1 2 3))
+->(if (null? l) el-n (f-bin (f-un (car l)) ((combine f-bin f-un el-n (cdr l)))))  :AG{f-bin->+,f-un->id,el-n->0}{l->'(1 2 3)}
+->(f-bin (f-un (car l))      ((combine f-bin f-un el-n) (cdr l)))  :AG{f-bin->+,f-un->id,el-n->0}{l->'(1 2 3)}
+->(+     (id (car '(1 2 3))) (combine f-bin f-un el-n) (cdr l)))  :AG{f-bin->+,f-un->id,el-n->0}{l->'(1 2 3)}
+->(+     (id 1)              (combine f-bin f-un el-n) (cdr l))  :AG{f-bin->+,f-un->id,el-n->0}{l->'(1 2 3)}
+->(+     (K-id 1)            ((combine f-bin f-un el-n) (cdr l)))  :AG{f-bin->+,f-un->id,el-n->0}{l->'(1 2 3)}
+->(+ 1 ((combine f-bin f-un el-n) (cdr l))) :AG{f-bin->+,f-un->id,el-n->0}{l->'(1 2 3)}
+->(+ 1 ((combine f-bin f-un el-n) (cdr '(1 2 3)))): AG{f-bin->+,f-un->id,el-n->0}{l->'(1 2 3)}
+->(+ 1 ((combine f-bin f-un el-n) '(2 3))): AG{f-bin->+,f-un->id,el-n->0}{l->'(1 2 3)}
+->(+ 1 ((combine + id 0) '(2 3))): AG{f-bin->+,f-un->id,el-n->0}{l->'(1 2 3)}
+->(+ 1 ((K-combine + id 0) '(2 3))): AG{f-bin->+,f-un->id,el-n->0}{l->'(1 2 3)}
+;ABAIXO, como aplicamos K-combine a + id 0, criamos NOVO ambiente, o da aplicação recursiva. Ele é igual ao ambiente de k-somatória, mas é um novo ambiente
+->(+ 1 (<<(lambda (l) (if (null? l) el-n (f-bin (f-un (car l)) ((combine f-bin f-un el-n) (cdr l))))))),AG{f-bin->+,f-un->id,el-n->0}>> '(2 3)))
+->(+ 1 (if (null? l) el-n (f-bin (f-un (car l)) (combine f-bin f-un el-n (cdr l))))):AG{f-bin->+,f-un->id,el-n->0}{l->'(2 3)}
+->(+ 1 (f-bin (f-un (car l)) ((combine f-bin f-un el-n (cdr l)))));AG{f-bin->+,f-un->id,el-n->0}{l->'(2 3)}
+->(+ 1 (+ (id (car '(2 3)) ((combine + id 0 (cdr '(2 3))))))); AG{f-bin->+,f-un->id,el-n->0}{l->'(2 3)}
+->(+ 1 (+ 2 ((K-combine + id 0) '(3))); AG{f-bin->+,f-un->id,el-n->0}{l->'(2 3)}
+;;NOVAMENTE APLICAMOS O FECHAMENTO K-combine
+->(+ 1 (+ 2 (<<(lambda (l) (if (null? l) el-n (f-bin (f-un (car l)) ((combine f-bin f-un el-n) (cdr l)))))),AG{f-bin->+,f-un->id,el-n->0}>> '(3); AG{f-bin->+,f-un->id,el-n->0}{l->'(2 3)}
+;;AGORA APLICAMOS O FECHAMENTO <<lamnbda(l)....
+->(+ 1 (+ 2 (if (null? l) el-n (f-bin (f-un (car l)) ((combine f-bin f-un el-n) (cdr l)))))),AG{f-bin->+,f-un->id,el-n->0}{l->'(3)}
+;;SUBSTITUIMOS AS OS PARAMETROS PELOS VALORES DO AMBIENTE
+->(+ 1 (+ 2 (if (null? '(3)) 0 (+ (id (car '(3))) ((combine + id 0)(cdr '(3))))))):AG{f-bin->+,f-un->id,el-n->0}{l->'(3)}
+->(+ 1 (+ 2 (+ (id (car '(3))) ((combine + id 0)(cdr '(3))))));AG{f-bin->+,f-un->id,el-n->0}{l->'(3)}
+->(+ 1 (+ 2 (+ (id     3    ) ((combine + id 0)(cdr '(3))))));AG{f-bin->+,f-un->id,el-n->0}{l->'(3)}
+->(+ 1 (+ 2 (+ 3      ((combine + id 0)(cdr '(3))))));AG{f-bin->+,f-un->id,el-n->0}{l->'(3)}
+->(+ 1 (+ 2 (+ 3      ((K-combine + id 0)(cdr '(3))))));AG{f-bin->+,f-un->id,el-n->0}{l->'(3)}
+->(+ 1 (+ 2 (+ 3      ((K-combine + id 0)'()))));AG{f-bin->+,f-un->id,el-n->0}{l->'(3)}
+;;ULTIMA APLICAÇÃO DE K-combine, mais um ambinente igual, mas não o mesmo, do que o do fechamento K-somatoria
+->(+ 1 (+ 2 (+ 3      (<<(lambda (l) (if (null? l) el-n (f-bin (f-un (car l)) ((combine f-bin f-un el-n) (cdr l))))),AG{f-bin->+,f-un->id,el-n->0}>> '() ))))
+;;AGORA APLICO O "lambda (l)..." no valor '(), tenho um "if" avaliado e estendo o amniente para incluir {l->"()}
+->(+ 1 (+ 2 (+ 3 (if (null? l)   el-n (f-bin (f-un (car l))   ((combine f-bin f-un el-n) (cdr l))))))):AG{f-bin->+,f-un->id,el-n->0},{l->'()}
+->(+ 1 (+ 2 (+ 3 (if (null? '()) 0    (+     (id   (car "())) ((combine +      id   0  ) (cdr "()))))))):AG{f-bin->+,f-un->id,el-n->0},{l->'()}
+;;UFA AGORA A CONDIÇÃO DO IF É VERDADEIRA
+->(+ 1 (+ 2 (+ 3  0)))
+->(+ 1 (+ 2 3))
+->(+ 1 5)
+6
+
+
+
+
+
+
+
+=======Abaixo definição do ambiente global após o terceiro define acima======
+
+AG = {combine->K-combine,somatoria->K-somatoria,id->K-id }
+
+K-combine=> <<(lambda (f-bin f-un el-n) (lambda (l) (if (null? l) el-n (f-bin (f-un (car l)) ((combine f-bin f-un el-n) (cdr l)))))),AG>>
+K-somatoria=> <<(lambda (l) (if (null? l) el-n (f-bin (f-un (car l)) (combine f-bin f-un el-n) (cdr l)))))),AG{f-bin->+,f-un->id,el-n->0}>>
+k-id = <<lambda(x) x),AG>>
